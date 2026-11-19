@@ -1,6 +1,6 @@
 # pr-watch — design
 
-Date: 2026-11-19. Status: approved design (O1b), pending spec review.
+Date: 2026-11-19. Status: approved; implemented in v0.1.0.
 
 ## Goal
 
@@ -35,15 +35,13 @@ A PR is tracked when any of these happen in the main session:
 
 1. `tool_result` for `bash` whose `input.command` contains `gh pr create` and whose output
    contains `https://github.com/<owner>/<repo>/pull/<n>`.
-2. `tool_result` for the `github` tool with `input.op === "pr_create"` (also when invoked via
-   `write` to `xd://github`; the implementation confirms which `toolName` the hook sees).
+2. `tool_result` for the `github` tool with `input.op === "pr_create"`. Verified on omp 19.0.0:
+   an `xd://github` write surfaces as `toolName === "github"` with the op object as `input`.
+   `write` to `xd://github` and `eval` code containing `gh pr create` are also matched.
 3. `/pr-watch <url> [--automerge]`.
-4. A subagent session hits 1 or 2. Factories are rebound per subagent without re-evaluating the
-   module graph (`extension-loading.md`), so the subagent instance pushes the URL onto a
-   module-level queue that the main instance drains on its next `tool_result`/`turn_end`.
-   R1: worker-thread subagents re-import the module and do not share the queue. The
-   implementation verifies the in-process path first; if subagents do not share module state,
-   the main instance instead scans its own `task` tool results for PR URLs.
+4. A subagent session hits 1 or 2. Verified on omp 19.0.0: `task` subagents run in-process and
+   share the module instance (the factory re-runs per session), so the subagent instance pushes
+   the URL onto a module-level queue that the main instance drains immediately and on every tick.
 
 Only `ctx.agent.kind === "main"` runs listeners, timers, and wakes.
 
@@ -96,8 +94,10 @@ type Fingerprint = {
 4. **Restart.** Listener exit (including 24h subscription expiry) → respawn with backoff
    5s, 30s, 2m, 5m (cap). Three exits within 10 min with no stdout event → that PR drops to
    poll mode.
-5. **Fallback.** If `gh event --help` fails at `session_start`, all PRs use poll mode: snapshot
-   every 120s via the same interval, no listeners.
+5. **Fallback.** If `gh event --help` fails at `session_start`, or a listener reports the account
+   lacks event subscriptions (`HTTP 403: Event subscriptions are not enabled for this account`;
+   the feature is a gated preview), all PRs use poll mode for the rest of the session: snapshot
+   every 120s, no listeners.
 6. **Hygiene.** Children tracked in a `Map<url, Subprocess>`, killed on `session_shutdown` and on
    untrack. All stream/exit callbacks wrapped in try/catch; a per-PR in-flight flag prevents
    overlapping snapshots.
@@ -165,9 +165,10 @@ so the agent is told explicitly whether merging is allowed.
 
 ## Loop guard
 
-`wakes` increments per action wake and resets to 0 on any user-authored prompt (the
-implementation picks the hook: `input` or `before_agent_start` with `reason: "prompt"`, excluding
-programmatic sends). On the wake that would be the 4th, the extension instead sends a halt
+`wakes` increments per action wake and resets to 0 on any user-authored prompt:
+`before_agent_start` with `reason: "prompt"` (fires for user prompts in every mode) and `input`
+with `source` `interactive`/`rpc`. Verified: wake turns from `triggerTurn`/`followUp` fire
+neither. On the wake that would be the 4th, the extension instead sends a halt
 wake: "stop acting on <PR>; summarize the failure loop and pin a `T` sticky note for the user",
 and sets `halted`. Halted PRs keep updating their fingerprint but do not wake until reset.
 `closed` always wakes.
@@ -180,7 +181,7 @@ and sets `halted`. Halted PRs keep updating their fingerprint but do not wake un
 2. E2E in tmux: private scratch repo `sglyon/omp-pr-watch-e2e` with a trivial GitHub Actions
    check. omp session runs `gh pr create`; push a failing commit → session wakes on its own and
    pushes a fix → green wake reports ready-to-merge (no automerge). Repeat with
-   `/pr-watch <url> --automerge` → merges. Verify R1 by creating a PR from a `task` subagent.
+   `/pr-watch <url> --automerge` → merges. Verify the subagent path by creating a PR from a `task` subagent.
 
 ## Docs
 
@@ -189,8 +190,8 @@ whenever a release commit lands.
 
 ## Risks
 
-- R1: subagent hand-off depends on shared module scope; verified during implementation, with
-  the `task`-result scan as fallback.
 - R2: no cross-session dedupe.
-- R3: `gh event listen` is new (v2.105.0, 2026-11-18). Only event arrival is depended on.
+- R3: `gh event listen` is new (v2.105.0, 2026-11-18) and preview-gated per account; it returned
+  403 for `sglyon` on 2026-11-19, so polling is the live path until GitHub enables it. Only event
+  arrival is depended on.
 - R4: auto-merge is opt-in per PR; approved PRs merge without asking.
