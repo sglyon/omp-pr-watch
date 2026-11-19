@@ -292,6 +292,29 @@ describe("diffSnapshot — events", () => {
 		expect(repeat.events).toEqual([]);
 	});
 
+	test("ci_green re-fires once with mergeAllowed when authorization arrives on an already-green SHA", () => {
+		const snap: Snapshot = {
+			state: "OPEN",
+			headSha: "sha1",
+			mergeable: "MERGEABLE",
+			reviewDecision: "",
+			checks: "passed",
+			failedChecks: [],
+			feedback: [],
+		};
+		const unauthorized = diffSnapshot(fp(), snap, { now: 0, automerge: false });
+		expect(unauthorized.events).toEqual([{ kind: "ci_green", mergeAllowed: false }]);
+
+		// User runs `/pr-watch <url> --automerge` on the same SHA.
+		const optedIn = diffSnapshot(unauthorized.next, snap, { now: 1000, automerge: true });
+		expect(optedIn.events).toEqual([{ kind: "ci_green", mergeAllowed: true }]);
+		expect(diffSnapshot(optedIn.next, snap, { now: 2000, automerge: true }).events).toEqual([]);
+
+		// Approval landing later on the same SHA authorizes too.
+		const approved = diffSnapshot(unauthorized.next, { ...snap, reviewDecision: "APPROVED" }, { now: 1000, automerge: false });
+		expect(approved.events).toEqual([{ kind: "ci_green", mergeAllowed: true }]);
+	});
+
 	test("ci_green does not fire while CONFLICTING", () => {
 		const snap: Snapshot = {
 			state: "OPEN",

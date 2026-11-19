@@ -49,6 +49,9 @@ export type Fingerprint = {
 	feedbackSeenAt: string;
 	reportedFailSha?: string;
 	reportedGreenSha?: string;
+	/** Whether the ci_green already reported for `reportedGreenSha` authorized merging. A later
+	 * authorization on the same SHA (approval, `--automerge`) re-fires ci_green once. */
+	reportedGreenAllowed?: boolean;
 	/** First time an empty check rollup was seen on `sha`; `none` settles to passed after NO_CHECKS_SETTLE_MS. */
 	noChecksSince?: { sha: string; at: number };
 };

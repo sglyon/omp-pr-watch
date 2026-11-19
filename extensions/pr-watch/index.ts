@@ -447,8 +447,11 @@ export default function prWatch(pi: ExtensionAPI) {
 
 			const existing = prs.get(ref.url);
 			if (existing) {
-				if (automergeFlag) existing.automerge = true;
+				const enabling = automergeFlag && !existing.automerge;
+				if (enabling) existing.automerge = true;
 				persist();
+				// Re-evaluate now: an already-reported green on this SHA becomes a merge wake.
+				if (enabling) void snapshot(ref.url);
 			} else {
 				trackUrl(ref.url, automergeFlag);
 				persist();

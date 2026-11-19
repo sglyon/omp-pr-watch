@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 describe("startListener", () => {
-	test("events mode: attaches then signals two events", async () => {
+	test("events mode: signals the attach message and two events", async () => {
 		process.env.FAKE_GH_MODE = "events";
 		const signals: string[] = [];
 		const handle = startListener({
@@ -40,8 +40,8 @@ describe("startListener", () => {
 		openHandles.push(handle);
 
 		await sleep(400);
-		expect(signals[0]).toBe("attached");
-		expect(signals.slice(1)).toEqual(["event", "event"]);
+		// stderr and stdout are separate pipes, so their relative order is not guaranteed.
+		expect([...signals].sort()).toEqual(["attached", "event", "event"]);
 		expect(handle.running).toBe(true);
 	});
 

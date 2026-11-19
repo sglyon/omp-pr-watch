@@ -156,6 +156,7 @@ export function diffSnapshot(
 			feedbackSeenAt: prev?.feedbackSeenAt ?? "",
 			reportedFailSha: prev?.reportedFailSha,
 			reportedGreenSha: prev?.reportedGreenSha,
+			reportedGreenAllowed: prev?.reportedGreenAllowed,
 			noChecksSince: prev?.noChecksSince,
 		};
 		return { events: [{ kind: "closed", state: snap.state }], next };
@@ -198,15 +199,19 @@ export function diffSnapshot(
 	}
 
 	let reportedGreenSha = prev?.reportedGreenSha;
+	let reportedGreenAllowed = prev?.reportedGreenAllowed;
 	const settledNone =
 		snap.checks === "none" &&
 		noChecksSince?.sha === snap.headSha &&
 		now - noChecksSince.at >= NO_CHECKS_SETTLE_MS;
 	const effectivePassed = snap.checks === "passed" || settledNone;
-	if (effectivePassed && snap.mergeable !== "CONFLICTING" && reportedGreenSha !== snap.headSha) {
-		const mergeAllowed = automerge || snap.reviewDecision === "APPROVED";
+	const mergeAllowed = automerge || snap.reviewDecision === "APPROVED";
+	const greenUnreported = reportedGreenSha !== snap.headSha;
+	const newlyAuthorized = !greenUnreported && mergeAllowed && !reportedGreenAllowed;
+	if (effectivePassed && snap.mergeable !== "CONFLICTING" && (greenUnreported || newlyAuthorized)) {
 		events.push({ kind: "ci_green", mergeAllowed });
 		reportedGreenSha = snap.headSha;
+		reportedGreenAllowed = mergeAllowed;
 	}
 
 	const next: Fingerprint = {
@@ -216,6 +221,7 @@ export function diffSnapshot(
 		feedbackSeenAt,
 		reportedFailSha,
 		reportedGreenSha,
+		reportedGreenAllowed,
 		noChecksSince,
 	};
 
