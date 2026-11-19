@@ -1,0 +1,15 @@
+{
+  "name": "@sglyon/omp-pr-watch",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "omp": {
+    "name": "OMP PR Watch",
+    "version": "0.0.0",
+    "description": "Track PRs a session opens and wake that session when CI, reviews, conflicts, or merge state need action.",
+    "extensions": []
+  }
+}
